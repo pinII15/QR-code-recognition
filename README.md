@@ -15,7 +15,7 @@
 1. 打开 Chrome，进入 `chrome://extensions`
 2. 开启右上角“开发者模式”
 3. 点击“加载已解压的扩展程序”
-4. 选择目录 `/home/runner/work/QR-code-recognition/QR-code-recognition`
+4. 选择本项目根目录（解压后的扩展程序文件夹）
 
 ## 使用
 
