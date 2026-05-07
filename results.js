@@ -1,4 +1,4 @@
-const LAST_CAPTURE_KEY = 'lastCapture';
+const LAST_SCAN_TASK_KEY = 'lastScanTask';
 const LAST_RESULT_KEY = 'lastResult';
 const URL_PATTERN = /^https?:\/\//i;
 
@@ -9,9 +9,12 @@ const statusElement = document.getElementById('status');
 const decodedTextElement = document.getElementById('decodedText');
 const linkContainer = document.getElementById('linkContainer');
 const resultLink = document.getElementById('resultLink');
+const sourceMode = document.getElementById('sourceMode');
 const sourceTitle = document.getElementById('sourceTitle');
 const sourceUrl = document.getElementById('sourceUrl');
-const capturedAt = document.getElementById('capturedAt');
+const imageMetaRow = document.getElementById('imageMetaRow');
+const imageUrl = document.getElementById('imageUrl');
+const triggeredAt = document.getElementById('triggeredAt');
 
 captureButton.addEventListener('click', async () => {
   if (!hasChromeApi) {
@@ -38,19 +41,19 @@ captureButton.addEventListener('click', async () => {
 
 if (hasChromeApi) {
   chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName !== 'local') {
-    return;
-  }
+    if (areaName !== 'local') {
+      return;
+    }
 
-  if (changes[LAST_RESULT_KEY]) {
-    renderResult(changes[LAST_RESULT_KEY].newValue);
-  }
+    if (changes[LAST_RESULT_KEY]) {
+      renderResult(changes[LAST_RESULT_KEY].newValue);
+    }
 
-  if (changes[LAST_CAPTURE_KEY]?.newValue) {
-    decodeCapture(changes[LAST_CAPTURE_KEY].newValue).catch((error) => {
-      setStatus(error instanceof Error ? error.message : '识别失败，请重试。', 'error');
-    });
-  }
+    if (changes[LAST_SCAN_TASK_KEY]?.newValue) {
+      decodeTask(changes[LAST_SCAN_TASK_KEY].newValue).catch((error) => {
+        setStatus(error instanceof Error ? error.message : '识别失败，请重试。', 'error');
+      });
+    }
   });
 }
 
@@ -61,21 +64,21 @@ init().catch((error) => {
 async function init() {
   if (!hasChromeApi) {
     renderResult();
-    setStatus('当前为页面预览模式，请在 Chrome 扩展中触发截图识别。');
+    setStatus('当前为页面预览模式，请在 Chrome 扩展中触发扫码。');
     captureButton.disabled = true;
     return;
   }
 
-  const storage = await chrome.storage.local.get([LAST_CAPTURE_KEY, LAST_RESULT_KEY]);
+  const storage = await chrome.storage.local.get([LAST_SCAN_TASK_KEY, LAST_RESULT_KEY]);
   renderResult(storage[LAST_RESULT_KEY]);
 
-  if (storage[LAST_CAPTURE_KEY] && shouldDecode(storage[LAST_CAPTURE_KEY], storage[LAST_RESULT_KEY])) {
-    await decodeCapture(storage[LAST_CAPTURE_KEY]);
+  if (storage[LAST_SCAN_TASK_KEY] && shouldDecode(storage[LAST_SCAN_TASK_KEY], storage[LAST_RESULT_KEY])) {
+    await decodeTask(storage[LAST_SCAN_TASK_KEY]);
   }
 }
 
-function shouldDecode(capture, result) {
-  if (!capture?.dataUrl) {
+function shouldDecode(task, result) {
+  if (!task?.dataUrl) {
     return false;
   }
 
@@ -83,17 +86,19 @@ function shouldDecode(capture, result) {
     return true;
   }
 
-  return capture.capturedAt !== result.capturedAt || result.status === 'processing';
+  return task.triggeredAt !== result.triggeredAt || result.status === 'processing';
 }
 
-async function decodeCapture(capture) {
+async function decodeTask(task) {
   if (!('BarcodeDetector' in window)) {
     await saveResult({
       status: 'error',
       text: '',
       isUrl: false,
-      capturedAt: capture.capturedAt,
-      sourceTab: capture.sourceTab,
+      sourceType: task.sourceType,
+      triggeredAt: task.triggeredAt,
+      sourceTab: task.sourceTab,
+      imageUrl: task.imageUrl || '',
       message: '当前 Chrome 版本不支持二维码识别，请升级浏览器后重试。'
     });
     return;
@@ -105,17 +110,19 @@ async function decodeCapture(capture) {
       status: 'error',
       text: '',
       isUrl: false,
-      capturedAt: capture.capturedAt,
-      sourceTab: capture.sourceTab,
+      sourceType: task.sourceType,
+      triggeredAt: task.triggeredAt,
+      sourceTab: task.sourceTab,
+      imageUrl: task.imageUrl || '',
       message: '当前环境不支持识别二维码格式。'
     });
     return;
   }
 
-  setStatus('正在识别截图中的二维码...');
+  setStatus(task.message || '正在识别二维码...');
 
   const detector = new BarcodeDetector({ formats: ['qr_code'] });
-  const image = await loadImage(capture.dataUrl);
+  const image = await loadImage(task.dataUrl);
   const codes = await detector.detect(image);
   const text = codes[0]?.rawValue?.trim() || '';
 
@@ -124,8 +131,10 @@ async function decodeCapture(capture) {
       status: 'success',
       text,
       isUrl: URL_PATTERN.test(text),
-      capturedAt: capture.capturedAt,
-      sourceTab: capture.sourceTab
+      sourceType: task.sourceType,
+      triggeredAt: task.triggeredAt,
+      sourceTab: task.sourceTab,
+      imageUrl: task.imageUrl || ''
     });
     return;
   }
@@ -134,9 +143,13 @@ async function decodeCapture(capture) {
     status: 'not-found',
     text: '',
     isUrl: false,
-    capturedAt: capture.capturedAt,
-    sourceTab: capture.sourceTab,
-    message: '截图中未检测到可识别的二维码。'
+    sourceType: task.sourceType,
+    triggeredAt: task.triggeredAt,
+    sourceTab: task.sourceTab,
+    imageUrl: task.imageUrl || '',
+    message: task.sourceType === 'image_context_menu'
+      ? '所选图片中未检测到可识别的二维码。'
+      : '截图中未检测到可识别的二维码。'
   });
 }
 
@@ -148,17 +161,29 @@ function renderResult(result) {
   if (!result) {
     decodedTextElement.value = '';
     linkContainer.classList.add('hidden');
+    sourceMode.textContent = '-';
     sourceTitle.textContent = '-';
     sourceUrl.textContent = '-';
-    capturedAt.textContent = '-';
-    setStatus('请点击插件图标或使用快捷键开始截图识别。');
+    imageUrl.textContent = '-';
+    imageMetaRow.classList.add('hidden');
+    triggeredAt.textContent = '-';
+    setStatus('请点击插件图标、使用快捷键，或在图片上右键开始扫码。');
     return;
   }
 
   decodedTextElement.value = result.text || '';
+  sourceMode.textContent = getSourceLabel(result.sourceType);
   sourceTitle.textContent = result.sourceTab?.title || '-';
   sourceUrl.textContent = result.sourceTab?.url || '-';
-  capturedAt.textContent = formatDate(result.capturedAt);
+  triggeredAt.textContent = formatDate(result.triggeredAt);
+
+  if (result.sourceType === 'image_context_menu' && result.imageUrl) {
+    imageUrl.textContent = result.imageUrl;
+    imageMetaRow.classList.remove('hidden');
+  } else {
+    imageUrl.textContent = '-';
+    imageMetaRow.classList.add('hidden');
+  }
 
   if (result.isUrl && result.text) {
     resultLink.href = result.text;
@@ -172,9 +197,9 @@ function renderResult(result) {
   if (result.status === 'success') {
     setStatus('已成功识别二维码内容。', 'success');
   } else if (result.status === 'processing') {
-    setStatus(result.message || '正在识别截图中的二维码...');
+    setStatus(result.message || '正在识别二维码...');
   } else if (result.status === 'not-found') {
-    setStatus(result.message || '截图中未检测到二维码。');
+    setStatus(result.message || '未检测到二维码。');
   } else {
     setStatus(result.message || '识别失败，请重试。', 'error');
   }
@@ -183,6 +208,18 @@ function renderResult(result) {
 function setStatus(message, tone = 'info') {
   statusElement.textContent = message;
   statusElement.className = `status${tone === 'info' ? '' : ` ${tone}`}`;
+}
+
+function getSourceLabel(sourceType) {
+  if (sourceType === 'image_context_menu') {
+    return '右键图片扫码';
+  }
+
+  if (sourceType === 'page_capture') {
+    return '页面截图';
+  }
+
+  return '-';
 }
 
 function formatDate(value) {
@@ -205,7 +242,7 @@ function loadImage(dataUrl) {
   return new Promise((resolve, reject) => {
     const image = new Image();
     image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error('无法读取截图内容。'));
+    image.onerror = () => reject(new Error('无法读取待识别图片内容。'));
     image.src = dataUrl;
   });
 }

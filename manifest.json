@@ -5,6 +5,7 @@
   "description": "截图识别页面中的二维码并展示解析结果。",
   "permissions": [
     "activeTab",
+    "contextMenus",
     "storage",
     "tabs"
   ],
