@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QR 识别结果</title>
+    <link rel="stylesheet" href="results.css" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="card">
+        <div class="header">
+          <img src="icons/icon48.png" alt="QR 图标" class="logo" />
+          <div>
+            <p class="eyebrow">QR Code Recognition</p>
+            <h1>识别结果</h1>
+          </div>
+        </div>
+
+        <button id="captureButton" class="primary-button" type="button">重新截图识别</button>
+
+        <div id="status" class="status"></div>
+
+        <div class="field">
+          <label for="decodedText">解析内容</label>
+          <textarea id="decodedText" rows="6" readonly placeholder="识别结果会显示在这里"></textarea>
+        </div>
+
+        <div id="linkContainer" class="link-container hidden">
+          <a id="resultLink" href="#" target="_blank" rel="noreferrer">打开识别到的网址</a>
+        </div>
+
+        <dl class="meta">
+          <div>
+            <dt>来源页面</dt>
+            <dd id="sourceTitle">-</dd>
+          </div>
+          <div>
+            <dt>页面地址</dt>
+            <dd id="sourceUrl">-</dd>
+          </div>
+          <div>
+            <dt>截图时间</dt>
+            <dd id="capturedAt">-</dd>
+          </div>
+        </dl>
+      </section>
+    </main>
+
+    <script src="results.js"></script>
+  </body>
+</html>
